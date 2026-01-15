@@ -16,7 +16,9 @@ async function bootstrap() {
   // เปิดใช้ ValidationPipe 
   app.useGlobalPipes(new ValidationPipe({ 
     whitelist: true, // ตัด field แปลกปลอมทิ้งอัตโนมัติ 
-    forbidNonWhitelisted: true // (Optional) แจ้ง Error ถ้ามี field แปลกปลอม 
+    forbidNonWhitelisted: true, // (Optional) แจ้ง Error ถ้ามี field แปลกปลอม 
+    transform: true, // แปลง payload เป็น class ตาม DTO 
+    transformOptions: { enableImplicitConversion: true },
   })); 
 
  app.enableCors(); 

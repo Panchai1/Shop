@@ -17,6 +17,9 @@ export class Product {
   
   @Prop({ type: [String], required: false }) 
   color?: string;
+
+  @Prop() // เก็บเป็น String (Path ของไฟล์) เช่น 'uploads/xxx-xxx.jpg'
+   imageUrl: string;
 } 
 export const ProductSchema = SchemaFactory.createForClass(Product); 
 

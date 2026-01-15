@@ -24,12 +24,15 @@
 //     return `This action removes a #${id} product`;
 //   }
 // }
-import { Injectable, NotFoundException } from '@nestjs/common'; 
+import { Injectable, NotFoundException,InternalServerErrorException } from '@nestjs/common'; 
 import { InjectModel } from '@nestjs/mongoose'; 
 import { Model } from 'mongoose'; 
 import { CreateProductDto } from './dto/create-product.dto'; 
 import { UpdateProductDto } from './dto/update-product.dto'; 
 import { Product } from './entities/product.entity'; 
+import type { Express } from 'express';
+import { safeUnlinkByRelativePath } from '../common/utils/file.utils';
+
 
 @Injectable() 
 export class ProductsService { 
@@ -37,14 +40,38 @@ export class ProductsService {
   constructor( 
     @InjectModel(Product.name) private productModel: Model<Product>, 
   ) {} 
-  // --- สร้างสินค้า (Create) --- 
+  // --- สร้างสินค้า (Create) ---  เป็นตัวเก่าของฟังก์ชัน create ด้านบน
   // async = ฟังก์ชันแบบอะซิงโครนัส เพื่อไม่ต้องรอการทำงานของ Database 
-  async create(createProductDto: CreateProductDto): Promise<Product> { 
-    // สร้างอินสแตนซ์ของโมเดลด้วยข้อมูลจาก DTO (JSON) 
-    const createdProduct = new this.productModel(createProductDto); 
-    // บันทึกลง Database และคืนค่ากลับ 
-    return createdProduct.save();  
-  } 
+  // async create(createProductDto: CreateProductDto, file?: Express.Multer.File): Promise<Product> { 
+  //   // สร้างอินสแตนซ์ของโมเดลด้วยข้อมูลจาก DTO (JSON) 
+  //   const createdProduct = new this.productModel(createProductDto); 
+  //   // บันทึกลง Database และคืนค่ากลับ 
+  //   return createdProduct.save();  
+  // } 
+    private toPublicImagePath(filePath: string): string {
+    const normalized = filePath.replace(/\\/g, '/'); // กัน Windows path
+    // ตัด 'uploads/' หรือ './uploads/' ออกให้หมด
+    return normalized
+      .replace(/^\.?\/?uploads\//, '')
+      .replace(/^uploads\//, '');
+  }
+
+  // --- สร้างสินค้า (Create) ---
+  async create(dto: CreateProductDto, file?: Express.Multer.File) {
+    const diskPath = file?.path?.replace(/\\/g, '/'); // เช่น uploads/products/uuid.jpg
+    const imageUrl = diskPath ? this.toPublicImagePath(diskPath) : undefined; // products/uuid.jpg
+
+    try {
+      return await this.productModel.create({
+        ...(dto as any),
+        ...(imageUrl ? { imageUrl } : {}),
+      });
+    } catch (err) {
+      if (diskPath) await safeUnlinkByRelativePath(diskPath); // ลบ “disk path” เท่านั้น
+      throw new InternalServerErrorException('Create product failed');
+    }
+  }
+
   // --- ดึงข้อมูลทั้งหมด (Read All) --- 
   // Promise = สัญญาว่าจะคืนค่าในอนาคต (หลังจากรอการทำงานของ Database เสร็จ) 
   async findAll(): Promise<Product[]> { 
@@ -120,5 +147,9 @@ export class ProductsService {
 
   return this.productModel.find(query).sort(sortOption);
 }
+
+
+
+
 
 } 
