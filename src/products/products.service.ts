@@ -1,65 +1,35 @@
-// import { Injectable } from '@nestjs/common';
-// import { CreateProductDto } from './dto/create-product.dto';
-// import { UpdateProductDto } from './dto/update-product.dto';
-
-// @Injectable()
-// export class ProductsService {
-//   create(createProductDto: CreateProductDto) {
-//     return 'This action adds a new product';
-//   }
-
-//   findAll() {
-//     return `This action returns all products`;
-//   }
-
-//   findOne(id: number) {
-//     return `This action returns a #${id} product`;
-//   }
-
-//   update(id: number, updateProductDto: UpdateProductDto) {
-//     return `This action updates a #${id} product`;
-//   }
-
-//   remove(id: number) {
-//     return `This action removes a #${id} product`;
-//   }
-// }
-import { Injectable, NotFoundException,InternalServerErrorException } from '@nestjs/common'; 
-import { InjectModel } from '@nestjs/mongoose'; 
-import { Model } from 'mongoose'; 
-import { CreateProductDto } from './dto/create-product.dto'; 
-import { UpdateProductDto } from './dto/update-product.dto'; 
-import { Product } from './entities/product.entity'; 
+import {
+  Injectable,
+  NotFoundException,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
+import { Product } from './entities/product.entity';
 import type { Express } from 'express';
 import { safeUnlinkByRelativePath } from '../common/utils/file.utils';
 
+@Injectable()
+export class ProductsService {
+  constructor(
+    @InjectModel(Product.name) private productModel: Model<Product>,
+  ) {}
 
-@Injectable() 
-export class ProductsService { 
-  // Inject Product Model เข้ามาใช้งาน โดยเก็บไว้ในตัวแปรชื่อ productModel 
-  constructor( 
-    @InjectModel(Product.name) private productModel: Model<Product>, 
-  ) {} 
-  // --- สร้างสินค้า (Create) ---  เป็นตัวเก่าของฟังก์ชัน create ด้านบน
-  // async = ฟังก์ชันแบบอะซิงโครนัส เพื่อไม่ต้องรอการทำงานของ Database 
-  // async create(createProductDto: CreateProductDto, file?: Express.Multer.File): Promise<Product> { 
-  //   // สร้างอินสแตนซ์ของโมเดลด้วยข้อมูลจาก DTO (JSON) 
-  //   const createdProduct = new this.productModel(createProductDto); 
-  //   // บันทึกลง Database และคืนค่ากลับ 
-  //   return createdProduct.save();  
-  // } 
-    private toPublicImagePath(filePath: string): string {
-    const normalized = filePath.replace(/\\/g, '/'); // กัน Windows path
-    // ตัด 'uploads/' หรือ './uploads/' ออกให้หมด
+  private toPublicImagePath(filePath: string): string {
+    const normalized = filePath.replace(/\\/g, '/');
     return normalized
       .replace(/^\.?\/?uploads\//, '')
       .replace(/^uploads\//, '');
   }
 
-  // --- สร้างสินค้า (Create) ---
+  // ✅ CREATE
   async create(dto: CreateProductDto, file?: Express.Multer.File) {
-    const diskPath = file?.path?.replace(/\\/g, '/'); // เช่น uploads/products/uuid.jpg
-    const imageUrl = diskPath ? this.toPublicImagePath(diskPath) : undefined; // products/uuid.jpg
+    const diskPath = file?.path?.replace(/\\/g, '/');
+    const imageUrl = diskPath
+      ? this.toPublicImagePath(diskPath)
+      : undefined;
 
     try {
       return await this.productModel.create({
@@ -67,89 +37,150 @@ export class ProductsService {
         ...(imageUrl ? { imageUrl } : {}),
       });
     } catch (err) {
-      if (diskPath) await safeUnlinkByRelativePath(diskPath); // ลบ “disk path” เท่านั้น
+      if (diskPath) {
+        await safeUnlinkByRelativePath(diskPath);
+      }
       throw new InternalServerErrorException('Create product failed');
     }
   }
 
-  // --- ดึงข้อมูลทั้งหมด (Read All) --- 
-  // Promise = สัญญาว่าจะคืนค่าในอนาคต (หลังจากรอการทำงานของ Database เสร็จ) 
-  async findAll(): Promise<Product[]> { 
-    // ใช้ .exec() เพื่อรันคำสั่ง Query และคืนค่า 
-    return this.productModel.find().exec(); 
-  } 
-  // --- ดึงข้อมูลรายตัว (Read One) --- 
-  async findOne(id: string): Promise<Product> { 
-    // await รอผลลัพธ์จากการค้นหาใน Database เพื่อเก็บลงตัวแปร product ไปตรวจสอบต่อ 
-    const product = await this.productModel.findById(id).exec(); 
+  // ✅ READ ALL + FILTER
+  async findAll(query: any): Promise<Product[]> {
+    const { name, minPrice, maxPrice, sort, order } = query;
+    const filter: any = {};
 
-    // ดัก Error: ถ้าหาไม่เจอ ให้โยน Error 404 ออกไป 
-    if (!product) { 
-      throw new NotFoundException(`Product with ID ${id} not found`); 
-    } 
-    return product; 
+    if (name) {
+      filter.name = { $regex: name, $options: 'i' };
+    }
 
-  } 
-  // --- แก้ไขข้อมูล (Update) --- 
-  async update(id: string, updateProductDto: UpdateProductDto): Promise<Product> { 
-    const updatedProduct = await this.productModel 
-      .findByIdAndUpdate( 
-        id,  
-        updateProductDto,  
-        { new: true } // สำคัญ!: Option นี้บอกให้คืนค่าข้อมูล "ใหม่" หลังแก้แล้วกลับมา (ถ้าไม่ใส่จะได้ค่าเก่า) 
-      ) 
-      .exec(); 
-    // ดัก Error: ถ้าหาไม่เจอ 
-    if (!updatedProduct) { 
-      throw new NotFoundException(`Product with ID ${id} not found`); 
-    } 
-    return updatedProduct; 
-  } 
-  // --- ลบข้อมูล (Delete) --- 
-  async remove(id: string): Promise<Product> { 
-    const deletedProduct = await this.productModel.findByIdAndDelete(id).exec(); 
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
+    }
 
-    // ดัก Error: ถ้าหาไม่เจอ 
-    if (!deletedProduct) { 
-      throw new NotFoundException(`Product with ID ${id} not found`); 
-    } 
-    return deletedProduct; 
-  } 
-  async search(filters: {
-  keyword?: string;
-  minPrice?: number;
-  maxPrice?: number;
-  sort?: 'asc' | 'desc';
-}) {
-  const query: any = {};
+    const sortOptions: any = {};
+    if (sort) {
+      sortOptions[sort] = order === 'desc' ? -1 : 1;
+    }
 
-  // 🔍 ค้นหาจากชื่อสินค้า
-  if (filters.keyword) {
-    query.name = { $regex: filters.keyword, $options: 'i' };
+    return this.productModel.find(filter).sort(sortOptions).exec();
   }
 
-  // 💰 ช่วงราคา
-  if (filters.minPrice || filters.maxPrice) {
-    query.price = {};
-    if (filters.minPrice !== undefined) {
-      query.price.$gte = Number(filters.minPrice);
+  // ✅ READ ONE (ตัวที่ขาดไป)
+  async findOne(id: string): Promise<Product> {
+    const product = await this.productModel.findById(id).exec();
+
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
     }
-    if (filters.maxPrice !== undefined) {
-      query.price.$lte = Number(filters.maxPrice);
+
+    return product;
+  }
+
+  // ✅ UPDATE
+ 
+
+  // ✅ DELETE
+  async remove(id: string): Promise<Product> {
+    const deletedProduct = await this.productModel
+      .findByIdAndDelete(id)
+      .exec();
+
+    if (!deletedProduct) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    return deletedProduct;
+  }
+
+  async update(
+  id: string,
+  updateProductDto: UpdateProductDto,
+  file?: Express.Multer.File,
+): Promise<Product> {
+  const updateData: any = { ...updateProductDto };
+
+  // โหลดสินค้าที่มีอยู่เพื่อลบรูปเก่า (ถ้ามี)
+  const existingProduct = await this.productModel.findById(id).exec();
+  if (!existingProduct) {
+    throw new NotFoundException(`Product with ID ${id} not found`);
+  }
+
+  // ถ้ามีไฟล์ใหม่ ให้เตรียมค่า imageUrl และอัปเดตในฐานข้อมูล
+  if (file) {
+    const newDiskPath = file.path?.replace(/\\/g, '/');
+    const newImageUrl = newDiskPath ? this.toPublicImagePath(newDiskPath) : undefined;
+    updateData.imageUrl = newImageUrl;
+
+    try {
+      const updatedProduct = await this.productModel
+        .findByIdAndUpdate(
+          id,
+          { $set: updateData }, // update เฉพาะ field ที่ส่งมา
+          { new: true, runValidators: true },
+        )
+        .exec();
+
+      if (!updatedProduct) {
+        if (newDiskPath) await safeUnlinkByRelativePath(newDiskPath);
+        throw new NotFoundException(`Product with ID ${id} not found`);
+      }
+
+      // ลบไฟล์เก่า (อยู่ในโฟลเดอร์ uploads) — ignore ENOENT
+      if (existingProduct.imageUrl) {
+        await safeUnlinkByRelativePath(`uploads/${existingProduct.imageUrl}`);
+      }
+
+      return updatedProduct;
+    } catch (err) {
+      if (newDiskPath) await safeUnlinkByRelativePath(newDiskPath);
+      throw new InternalServerErrorException('Update product failed');
     }
   }
 
-  // ↕️ เรียงราคา
-  const sortOption: Record<string, 1 | -1> =
-    filters.sort === 'desc'
-      ? { price: -1 }
-      : { price: 1 };
+  // กรณีไม่มีไฟล์ใหม่ — อัปเดตปกติ
+  const updatedProduct = await this.productModel
+    .findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true },
+    )
+    .exec();
 
-  return this.productModel.find(query).sort(sortOption);
+  if (!updatedProduct) {
+    throw new NotFoundException(`Product with ID ${id} not found`);
+  }
+
+  return updatedProduct;
 }
+  // ✅ SEARCH
+  async search(filters: {
+    keyword?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    sort?: 'asc' | 'desc';
+  }) {
+    const query: any = {};
+      // คำค้นหา
+    if (filters.keyword) {
+      query.name = { $regex: filters.keyword, $options: 'i' };
+    }
+     //ช่วงราคาที่กรอง
+    if (filters.minPrice || filters.maxPrice) {
+      query.price = {};
+      if (filters.minPrice !== undefined) {
+        query.price.$gte = Number(filters.minPrice);
+      }
+      if (filters.maxPrice !== undefined) {
+        query.price.$lte = Number(filters.maxPrice);
+      }
+    }
 
-
-
-
-
-} 
+    const sortOption: Record<string, 1 | -1> =
+  filters.sort === 'desc'
+    ? { price: -1 }
+    : { price: 1 };
+    return this.productModel.find(query).sort(sortOption).exec();
+  }
+}
